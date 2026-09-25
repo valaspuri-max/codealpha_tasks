@@ -1,0 +1,8 @@
+{
+  "name": "codealpha-object-detection-tracking",
+  "private": true,
+  "scripts": {
+    "dev": "npx --yes serve -s . -l 5173",
+    "start": "npx --yes serve -s . -l 5173"
+  }
+}

@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Object Detection & Tracking — CodeAlpha Task 4</title>
+  <meta name="description" content="Real-time object detection and tracking using TensorFlow.js COCO-SSD" />
+  <!-- TensorFlow.js + COCO-SSD model (browser-native, no server needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-2: #334155;
+      --border: #475569;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --accent: #06b6d4;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --radius: 12px;
+      --gap: 16px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .app {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* Header */
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    header h1 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 4px;
+    }
+
+    /* Main layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: var(--gap);
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    /* Video area */
+    .canvas-wrapper {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+      min-height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas-wrapper canvas,
+    .canvas-wrapper img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .canvas-wrapper video {
+      display: none;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 40px;
+    }
+
+    .placeholder svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 12px;
+      opacity: 0.4;
+    }
+
+    .placeholder p {
+      font-size: 0.95rem;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 16px 0;
+      justify-content: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface-2);
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.15);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: #0f172a; }
+    .btn-danger { background: var(--danger); }
+    .btn-warning { background: var(--warning); color: #0f172a; }
+
+    .btn svg { width: 18px; height: 18px; }
+
+    .file-input { display: none; }
+
+    /* Sidebar / Stats panel */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .stat-value {
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      transition: background 0.2s;
+    }
+
+    .status-dot.off { background: var(--text-muted); }
+    .status-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.loading { background: var(--warning); animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .object-list {
+      max-height: 200px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .object-list::-webkit-scrollbar { width: 6px; }
+    .object-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .object-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      background: var(--surface-2);
+      border-radius: 6px;
+      font-size: 0.82rem;
+      border-left: 3px solid var(--accent);
+    }
+
+    .object-item .name { font-weight: 600; }
+    .object-item .conf { color: var(--text-muted); }
+    .object-item .tid {
+      background: var(--accent);
+      color: #0f172a;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .empty-text {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      text-align: center;
+      padding: 12px;
+    }
+
+    /* Loading overlay */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 100;
+      transition: opacity 0.3s;
+    }
+
+    .loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--surface-2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* Model badge */
+    .model-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    .model-badge .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 24px;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+  </style>
+  <meta property="og:image" content="https://bolt.new/static/og_default.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://bolt.new/static/og_default.png">
+</head>
+<body>
+  <!-- Loading overlay shown while TF.js model loads -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Loading AI model…</div>
+  </div>
+
+  <div class="app">
+    <header>
+      <h1>Object Detection &amp; Tracking System</h1>
+      <p>CodeAlpha AI Internship — Task 4</p>
+      <div class="model-badge">
+        <span class="dot"></span>
+        <span id="modelStatus">COCO-SSD · TensorFlow.js</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <!-- Left: canvas + controls -->
+      <div>
+        <div class="canvas-wrapper" id="canvasWrapper">
+          <div class="placeholder" id="placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <path d="M21 15l-5-5L5 21"/>
+            </svg>
+            <p>Upload an image or start the camera to begin detection</p>
+          </div>
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="canvas" style="display:none;"></canvas>
+        </div>
+
+        <div class="controls">
+          <input type="file" id="fileInput" class="file-input" accept="image/jpeg,image/jpg,image/png" />
+          <button class="btn btn-primary" id="btnUpload">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload Image
+          </button>
+          <button class="btn btn-success" id="btnStart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            Start Camera
+          </button>
+          <button class="btn btn-danger" id="btnStop" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+            Stop Camera
+          </button>
+          <button class="btn btn-warning" id="btnReset" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: stats panel -->
+      <aside class="panel">
+        <h2>Live Stats</h2>
+
+        <div class="stat-row">
+          <span class="stat-label">Camera Status</span>
+          <span class="stat-value"><span class="status-dot off" id="statusDot"></span><span id="cameraStatus">Off</span></span>
+        </div>
+
+        <div class="stat-row">
+          <span class="stat-label">FPS</span>
+          <span class="stat-value" id="fpsValue">0</span>
+        </div>
+
+        <div class="stat-row">
+          <span class="stat-label">Detected Objects</span>
+          <span class="stat-value" id="detectedCount">0</span>
+        </div>
+
+        <div class="stat-row">
+          <span class="stat-label">Tracked Objects</span>
+          <span class="stat-value" id="trackedCount">0</span>
+        </div>
+
+        <div>
+          <div class="stat-label" style="margin-bottom:8px;">Detections List</div>
+          <div class="object-list" id="detectionList">
+            <div class="empty-text">No detections yet</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>
+      Powered by TensorFlow.js + COCO-SSD &nbsp;·&nbsp; Runs entirely in your browser
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      // ---- DOM references ----
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const placeholder = document.getElementById("placeholder");
+      const fileInput = document.getElementById("fileInput");
+      const btnUpload = document.getElementById("btnUpload");
+      const btnStart = document.getElementById("btnStart");
+      const btnStop = document.getElementById("btnStop");
+      const btnReset = document.getElementById("btnReset");
+      const cameraStatus = document.getElementById("cameraStatus");
+      const statusDot = document.getElementById("statusDot");
+      const fpsValue = document.getElementById("fpsValue");
+      const detectedCount = document.getElementById("detectedCount");
+      const trackedCount = document.getElementById("trackedCount");
+      const detectionList = document.getElementById("detectionList");
+      const loadingOverlay = document.getElementById("loadingOverlay");
+
+      // ---- State ----
+      let model = null;
+      let stream = null;           // webcam MediaStream
+      let rafId = null;            // requestAnimationFrame ID
+      let isRunning = false;       // camera loop active
+      let mode = "idle";           // "idle" | "image" | "camera"
+      let trackers = [];           // active tracker objects
+      let nextTrackerId = 1;
+      let frameTimes = [];         // for FPS calculation
+      let lastDetection = [];      // most recent detections
+
+      // ---- Color palette for tracker IDs ----
+      const COLORS = [
+        "#ef4444", "#f59e0b", "#22c55e", "#06b6d4",
+        "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6",
+        "#f97316", "#84cc16", "#0ea5e9", "#a855f7"
+      ];
+
+      function colorFor(id) {
+        return COLORS[(id - 1) % COLORS.length];
+      }
+
+      // ---- Status helpers ----
+      function setStatus(text, state) {
+        cameraStatus.textContent = text;
+        statusDot.className = "status-dot " + state;
+      }
+
+      function updateButtons() {
+        btnStart.disabled = isRunning;
+        btnStop.disabled = !isRunning;
+        btnReset.disabled = mode === "idle";
+        btnUpload.disabled = isRunning;
+      }
+
+      // ---- IoU (Intersection over Union) for tracker matching ----
+      function iou(a, b) {
+        const xL = Math.max(a[0], b[0]);
+        const yT = Math.max(a[1], b[1]);
+        const xR = Math.min(a[2], b[2]);
+        const yB = Math.min(a[3], b[3]);
+        const interW = Math.max(0, xR - xL);
+        const interH = Math.max(0, yB - yT);
+        const interArea = interW * interH;
+        const areaA = (a[2] - a[0]) * (a[3] - a[1]);
+        const areaB = (b[2] - b[0]) * (b[3] - b[1]);
+        const union = areaA + areaB - interArea;
+        return union > 0 ? interArea / union : 0;
+      }
+
+      // ---- Simple IoU-based tracker (keeps IDs consistent across frames) ----
+      function updateTrackers(detections) {
+        const IOU_THRESHOLD = 0.3;
+        const matched = new Set();
+        const usedTrackers = new Set();
+
+        // Match each detection to the best existing tracker by IoU
+        detections.forEach(function (det) {
+          let bestIdx = -1;
+          let bestIou = IOU_THRESHOLD;
+          trackers.forEach(function (tr, idx) {
+            if (usedTrackers.has(idx)) return;
+            const score = iou(det.bbox, tr.bbox);
+            if (score > bestIou) {
+              bestIou = score;
+              bestIdx = idx;
+            }
+          });
+          if (bestIdx >= 0) {
+            // Reuse existing tracker
+            trackers[bestIdx].bbox = det.bbox;
+            trackers[bestIdx].class = det.class;
+            trackers[bestIdx].score = det.score;
+            trackers[bestIdx].missed = 0;
+            det.id = trackers[bestIdx].id;
+            usedTrackers.add(bestIdx);
+          } else {
+            // New tracker
+            det.id = nextTrackerId++;
+            trackers.push({
+              id: det.id,
+              bbox: det.bbox,
+              class: det.class,
+              score: det.score,
+              missed: 0
+            });
+          }
+        });
+
+        // Mark unmatched trackers as missed; remove after 15 consecutive misses
+        trackers = trackers.filter(function (tr, idx) {
+          if (!usedTrackers.has(idx)) {
+            tr.missed++;
+            return tr.missed < 15;
+          }
+          return true;
+        });
+
+        return detections;
+      }
+
+      // ---- Drawing ----
+      function drawDetections(detections, sourceWidth, sourceHeight) {
+        canvas.width = sourceWidth;
+        canvas.height = sourceHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // If in image mode, draw the image first; in camera mode the video
+        // frame is already on canvas via drawImage before this is called.
+        if (mode === "image" && currentImage) {
+          ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+        }
+
+        detections.forEach(function (det) {
+          const [x, y, w, h] = det.bbox;
+          const color = colorFor(det.id || 1);
+
+          // Bounding box
+          ctx.lineWidth = Math.max(2, sourceWidth / 400);
+          ctx.strokeStyle = color;
+          ctx.strokeRect(x, y, w, h);
+
+          // Label background
+          const label = det.class + " " + (det.score * 100).toFixed(0) + "%" +
+                        (det.id ? "  #" + det.id : "");
+          ctx.font = Math.max(14, sourceWidth / 50) + "px Inter, sans-serif";
+          const textW = ctx.measureText(label).width;
+          const labelH = Math.max(20, sourceWidth / 35);
+          ctx.fillStyle = color;
+          ctx.fillRect(x, y - labelH, textW + 12, labelH);
+
+          // Label text
+          ctx.fillStyle = "#0f172a";
+          ctx.fillText(label, x + 6, y - 6);
+        });
+      }
+
+      function updateStats(detections) {
+        detectedCount.textContent = detections.length;
+        const trackedSet = new Set();
+        detections.forEach(function (d) { if (d.id) trackedSet.add(d.id); });
+        trackedCount.textContent = trackedSet.size;
+
+        if (detections.length === 0) {
+          detectionList.innerHTML = '<div class="empty-text">No objects detected</div>';
+          return;
+        }
+
+        detectionList.innerHTML = detections.map(function (d) {
+          const color = colorFor(d.id || 1);
+          return (
+            '<div class="object-item" style="border-left-color:' + color + '">' +
+              '<span class="name">' + d.class + '</span>' +
+              '<span style="display:flex;gap:6px;align-items:center;">' +
+                '<span class="conf">' + (d.score * 100).toFixed(0) + '%</span>' +
+                (d.id ? '<span class="tid" style="background:' + color + '"> #' + d.id + '</span>' : '') +
+              '</span>' +
+            '</div>'
+          );
+        }).join("");
+      }
+
+      function updateFPS() {
+        const now = performance.now();
+        frameTimes.push(now);
+        while (frameTimes.length > 0 && frameTimes[0] < now - 1000) {
+          frameTimes.shift();
+        }
+        fpsValue.textContent = frameTimes.length;
+      }
+
+      // ---- Detection pipeline ----
+      async function detectAndDraw(source) {
+        if (!model) return;
+        const predictions = await model.detect(source);
+        // predictions: [{ bbox: [x,y,w,h], class, score }]
+        const detections = predictions.map(function (p) {
+          return { bbox: p.bbox, class: p.class, score: p.score, id: null };
+        });
+        const tracked = updateTrackers(detections);
+        lastDetection = tracked;
+        drawDetections(tracked, source.videoWidth || source.naturalWidth || source.width,
+                       source.videoHeight || source.naturalHeight || source.height);
+        updateStats(tracked);
+        updateFPS();
+      }
+
+      // ---- Camera loop ----
+      function cameraLoop() {
+        if (!isRunning) return;
+        detectAndDraw(video).then(function () {
+          if (isRunning) rafId = requestAnimationFrame(cameraLoop);
+        });
+      }
+
+      // ---- Image mode ----
+      let currentImage = null;
+
+      function handleImageFile(file) {
+        if (isRunning) return;
+        const img = new Image();
+        img.onload = function () {
+          currentImage = img;
+          mode = "image";
+          placeholder.style.display = "none";
+          canvas.style.display = "block";
+          // Reset trackers for a new image
+          trackers = [];
+          nextTrackerId = 1;
+          frameTimes = [];
+          detectAndDraw(img);
+          setStatus("Image loaded", "on");
+          updateButtons();
+        };
+        img.src = URL.createObjectURL(file);
+      }
+
+      // ---- Button handlers ----
+      btnUpload.addEventListener("click", function () {
+        if (isRunning) return;
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", function (e) {
+        const file = e.target.files && e.target.files[0];
+        if (file) handleImageFile(file);
+        fileInput.value = "";
+      });
+
+      btnStart.addEventListener("click", async function () {
+        if (isRunning) return;
+        try {
+          setStatus("Starting…", "loading");
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
+          });
+          video.srcObject = stream;
+          await video.play();
+
+          // Reset trackers for fresh camera session
+          trackers = [];
+          nextTrackerId = 1;
+          frameTimes = [];
+
+          mode = "camera";
+          currentImage = null;
+          isRunning = true;
+          placeholder.style.display = "none";
+          canvas.style.display = "block";
+
+          setStatus("Live", "on");
+          updateButtons();
+          cameraLoop();
+        } catch (err) {
+          console.error("Camera error:", err);
+          setStatus("Error", "off");
+          alert("Could not access the camera. Please make sure your browser has permission and a camera is connected.");
+          updateButtons();
+        }
+      });
+
+      btnStop.addEventListener("click", function () {
+        stopCamera();
+        setStatus("Stopped", "off");
+        updateButtons();
+      });
+
+      btnReset.addEventListener("click", function () {
+        stopCamera();
+        mode = "idle";
+        currentImage = null;
+        trackers = [];
+        nextTrackerId = 1;
+        frameTimes = [];
+        lastDetection = [];
+        canvas.style.display = "none";
+        placeholder.style.display = "block";
+        setStatus("Off", "off");
+        fpsValue.textContent = "0";
+        detectedCount.textContent = "0";
+        trackedCount.textContent = "0";
+        detectionList.innerHTML = '<div class="empty-text">No detections yet</div>';
+        updateButtons();
+      });
+
+      function stopCamera() {
+        isRunning = false;
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        if (stream) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          stream = null;
+        }
+        video.srcObject = null;
+      }
+
+      // ---- Initialize: load the COCO-SSD model ----
+      async function init() {
+        try {
+          // Set backend to webgl for GPU acceleration if available
+          if (tf.setBackend) {
+            try { await tf.setBackend("webgl"); } catch (e) { /* fallback to default */ }
+            try { await tf.ready(); } catch (e) { /* ignore */ }
+          }
+          model = await cocoSsd.load({ base: "lite_mobilenet_v2" });
+          loadingOverlay.classList.add("hidden");
+          setStatus("Ready", "off");
+          updateButtons();
+        } catch (err) {
+          console.error("Model load error:", err);
+          loadingOverlay.querySelector(".loading-text").textContent =
+            "Failed to load the AI model. Please refresh the page.";
+        }
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
