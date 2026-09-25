@@ -1,1 +1,1 @@
-KITSW College FAQ Chatbot – Task 2
+python FAQ Chatbot – Task 2
