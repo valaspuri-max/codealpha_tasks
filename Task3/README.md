@@ -1,4 +1,4 @@
-# Object Detection and Tracking System — CodeAlpha Task 4
+# Object Detection and Tracking System — CodeAlpha Task 3
 
 A complete, browser-based object detection and tracking web application built with **TensorFlow.js** and the **COCO-SSD** pretrained model. It runs entirely in the browser — no Python server, no backend, no API keys required.
 
