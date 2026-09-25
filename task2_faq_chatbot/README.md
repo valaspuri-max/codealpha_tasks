@@ -1,4 +1,4 @@
-# KITSW College FAQ Chatbot
+# python FAQ Chatbot
 
 ## Task 2 Objective
 
